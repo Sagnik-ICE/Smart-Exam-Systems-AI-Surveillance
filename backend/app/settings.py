@@ -26,7 +26,10 @@ def _get_list(name: str, default: list[str]) -> list[str]:
 
 class Settings:
     report_brand_name: str = os.getenv("REPORT_BRAND_NAME", "AI Smart Exam System")
-    database_url: str = os.getenv("DATABASE_URL", "sqlite:///./exam_system.db")
+    database_url: str = os.getenv(
+        "DATABASE_URL",
+        "postgresql+psycopg2://exam_user:exam_pass@127.0.0.1:5432/exam_system",
+    )
     cors_allowed_origins: list[str] = _get_list("CORS_ALLOWED_ORIGINS", ["*"])
     rate_limit_window_seconds: int = _get_int("RATE_LIMIT_WINDOW_SECONDS", 60)
     rate_limit_max_requests: int = _get_int("RATE_LIMIT_MAX_REQUESTS", 180)

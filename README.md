@@ -4,7 +4,7 @@ End-to-end AI proctored examination platform with role-based governance, behavio
 
 ## Product Snapshot
 
-- Backend: FastAPI + SQLAlchemy + PostgreSQL/SQLite
+- Backend: FastAPI + SQLAlchemy + PostgreSQL
 - Frontend: React 18 + Vite + Axios
 - Vision stack: YOLO + MediaPipe FaceLandmarker
 - Auth model: JWT bearer token with role guards
@@ -177,15 +177,6 @@ AI Project/
 	README.md
 	.gitignore
 
-	Generated local artifacts (not core source):
-		.venv/
-		backend/.pytest_cache/
-		backend/exam_system.db
-		backend/yolov8n.pt
-		frontend/node_modules/
-		frontend/dist/
-		frontend/vite-out.log
-		frontend/vite-err.log
 ```
 
 Layout notes:
@@ -726,8 +717,8 @@ Privacy expectations:
 
 - Vision processing is CPU/GPU intensive relative to standard API operations.
 - Lower-end systems may need reduced frame frequency from frontend.
-- PostgreSQL is recommended for realistic concurrent usage.
-- SQLite is intended for quick local fallback.
+- PostgreSQL is the active runtime database for this project.
+- All user, exam, and submission records should live in PostgreSQL only.
 
 ## Deployment Guidance
 
