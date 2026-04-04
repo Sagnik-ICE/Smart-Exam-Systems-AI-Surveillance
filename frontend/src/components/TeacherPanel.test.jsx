@@ -78,6 +78,11 @@ describe("TeacherPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("Total Submissions")).toBeInTheDocument();
       expect(screen.getAllByText("Student X").length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Student Monitor" }));
+
+    await waitFor(() => {
       expect(screen.getByText("Behavior Replay")).toBeInTheDocument();
     });
   });
