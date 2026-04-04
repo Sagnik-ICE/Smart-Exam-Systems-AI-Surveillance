@@ -36,7 +36,9 @@ End-to-end AI proctored examination platform with role-based governance, behavio
 21. Performance Notes
 22. Deployment Guidance
 23. Limitations
-24. Roadmap Suggestions
+24. Developer
+25. Support
+26. Roadmap Suggestions
 
 ## Vision and Scope
 
@@ -109,32 +111,88 @@ flowchart LR
 
 ```text
 AI Project/
+	.github/
+		workflows/
+			ci.yml
 	backend/
-		app/
-			main.py
-			models.py
-			schemas.py
-			settings.py
-			middleware.py
-			routers/
-			services/
+		.env.example
 		requirements.txt
 		requirements-dev.txt
+		assets/
+			face_landmarker.task
+		app/
+			main.py
+			database.py
+			models.py
+			schemas.py
+			security.py
+			settings.py
+			middleware.py
+			seed_demo.py
+			ensure_default_admin.py
+			routers/
+				auth.py
+				exams.py
+				rooms.py
+				submissions.py
+				events.py
+				analytics.py
+				management.py
+				vision.py
+			services/
+				scoring.py
+				answer_analysis.py
+				eye_tracking.py
+				audit.py
 		tests/
+			conftest.py
+			test_auth_and_permissions.py
+			test_management_rooms.py
+			test_submission_flow.py
 	frontend/
-		src/
-			components/
-			lib/
-			styles.css
 		package.json
 		vite.config.js
+		src/
+			main.jsx
+			App.jsx
+			styles.css
+			lib/
+				api.js
+			test/
+				setup.js
+			components/
+				LoginPanel.jsx
+				LoginPanel.test.jsx
+				TeacherPanel.jsx
+				TeacherPanel.test.jsx
+				StudentExam.jsx
+				AuthorityPanel.jsx
+				QuestionBuilder.jsx
+				UserPortal.jsx
 	docker-compose.postgres.yml
 	run_project.py
 	start-demo.ps1
 	stop-demo.ps1
 	health-check.ps1
 	README.md
+	.gitignore
+
+	Generated local artifacts (not core source):
+		.venv/
+		backend/.pytest_cache/
+		backend/exam_system.db
+		backend/yolov8n.pt
+		frontend/node_modules/
+		frontend/dist/
+		frontend/vite-out.log
+		frontend/vite-err.log
 ```
+
+Layout notes:
+
+- .venv, node_modules, dist, caches, logs, and local DB/model files are environment artifacts, not primary source.
+- CI is configured in .github/workflows/ci.yml for backend and frontend test jobs.
+- backend/assets/face_landmarker.task is the MediaPipe task file used by the vision service.
 
 ## Tech Stack and Versions
 
@@ -689,6 +747,20 @@ Minimum production recommendations:
 - Dynamic risk score is probabilistic and not a direct proof of cheating.
 - No migration framework configured yet.
 - Some behavior quality depends on browser support and user hardware.
+
+## Developer
+
+### Sagnik Saha Dibbay
+
+- Institution: Daffodil International University
+- Department: Information and Communication Engineering
+- GitHub: @Sagnik-ICE
+- Email: dibbaysaha17@gmail.com
+- Email: dibbay242-50-014@diu.edu.bd
+
+## Support
+
+For support, email dibbay242-50-014@diu.edu.bd or open an issue in the GitHub repository.
 
 ## Roadmap Suggestions
 
