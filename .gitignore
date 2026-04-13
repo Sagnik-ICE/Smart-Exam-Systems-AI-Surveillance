@@ -7,17 +7,10 @@ __pycache__/
 exam_system.db
 .venv/
 venv/
-backend/.env
 
 # Node
 node_modules/
 dist/
-frontend/vite-*.log
-
-# Temporary helper artifacts
-.temp_tunnel_extension/
-tunnel-extension-package.zip
-run_project2.py
 
 # OS
 .DS_Store
