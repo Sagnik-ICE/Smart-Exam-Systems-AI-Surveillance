@@ -1,4 +1,5 @@
 from typing import Any
+from datetime import datetime
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -128,6 +129,15 @@ class BehaviorBatchRequest(BaseModel):
     events: list[BehaviorEventIn] = Field(min_length=1, max_length=200)
 
 
+class ExtensionSiteEventRequest(BaseModel):
+    submission_id: int = Field(gt=0)
+    url: str = Field(min_length=6, max_length=2000)
+    title: str | None = Field(default=None, max_length=300)
+    hostname: str | None = Field(default=None, max_length=255)
+    trigger: str | None = Field(default="tab_switch", max_length=60)
+    timestamp_ms: int = Field(ge=0, le=18_000_000)
+
+
 class SubmitRequest(BaseModel):
     answers: dict[str, str] = Field(min_length=1, max_length=100)
     time_taken_seconds: int = Field(ge=1, le=18_000)
@@ -193,9 +203,12 @@ class TeacherExamSummary(BaseModel):
     room_id: str
     title: str
     course_code: str
+    course_title: str
     total_submissions: int
     submitted_count: int
     status: str
+    scheduled_at: datetime | None = None
+    scheduled_end_at: datetime | None = None
 
 
 class SubmissionAnswerRow(BaseModel):
@@ -250,11 +263,18 @@ class RoomCreateRequest(BaseModel):
     course_code: str = Field(min_length=2, max_length=60)
     exam_name: str = Field(min_length=3, max_length=200)
     duration_minutes: int = Field(default=30, ge=1, le=300)
+    scheduled_at: datetime | None = None
+    scheduled_end_at: datetime | None = None
     questions: list[Question] | None = Field(default=None, max_length=100)
     total_questions: int | None = Field(default=None, ge=1, le=100)
 
     @model_validator(mode="after")
     def ensure_questions(self):
+        if (self.scheduled_at is None) != (self.scheduled_end_at is None):
+            raise ValueError("Schedule start and end must be provided together")
+        if self.scheduled_at and self.scheduled_end_at and self.scheduled_end_at <= self.scheduled_at:
+            raise ValueError("Schedule end must be after schedule start")
+
         if self.questions and len(self.questions) > 0:
             return self
 
@@ -287,5 +307,8 @@ class RoomResponse(BaseModel):
     teacher_name: str
     course_title: str
     course_code: str
+    exam_title: str
     exam_id: int
+    scheduled_at: datetime | None = None
+    scheduled_end_at: datetime | None = None
 

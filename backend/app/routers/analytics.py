@@ -342,28 +342,34 @@ def export_exam_dashboard_pdf(
 def teacher_exams_overview(db: Session = Depends(get_db), teacher: User = Depends(require_role("teacher"))):
     exams = db.query(Exam).filter(Exam.created_by == teacher.id).order_by(Exam.created_at.desc()).all()
     room_map = {room.exam_id: room for room in db.query(ExamRoom).filter(ExamRoom.teacher_id == teacher.id).all()}
+    now = datetime.now(timezone.utc)
 
     output = []
     for exam in exams:
         room = room_map.get(exam.id)
-        if not room:
-            continue
         submissions = db.query(Submission).filter(Submission.exam_id == exam.id).all()
         total = len(submissions)
         submitted = len([item for item in submissions if item.status == "submitted"])
         status = "active"
         if total > 0 and submitted == total:
             status = "completed"
+        elif room and room.scheduled_start_at and now < room.scheduled_start_at:
+            status = "upcoming"
+        elif room and room.scheduled_end_at and now > room.scheduled_end_at:
+            status = "closed"
 
         output.append(
             TeacherExamSummary(
                 exam_id=exam.id,
-                room_id=room.room_id,
+                room_id=room.room_id if room else "Room removed",
                 title=exam.title,
-                course_code=room.course_code,
+                course_code=room.course_code if room else "-",
+                course_title=room.course_title if room else "Unassigned",
                 total_submissions=total,
                 submitted_count=submitted,
                 status=status,
+                scheduled_at=room.scheduled_start_at if room else None,
+                scheduled_end_at=room.scheduled_end_at if room else None,
             )
         )
     return output

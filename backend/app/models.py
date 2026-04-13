@@ -94,6 +94,8 @@ class ExamRoom(Base):
     course_title = Column(String(200), nullable=False)
     course_code = Column(String(60), nullable=False)
     teacher_name = Column(String(120), nullable=False)
+    scheduled_start_at = Column(DateTime(timezone=True), nullable=True)
+    scheduled_end_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

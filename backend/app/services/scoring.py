@@ -44,6 +44,8 @@ def _calculate_suspicion_assessment(
     webcam_movement_alerts = 0
     eye_left_alerts = 0
     eye_right_alerts = 0
+    eye_up_alerts = 0
+    eye_down_alerts = 0
 
     for event in sorted(events, key=lambda item: item.get("timestamp_ms", 0)):
         event_type = event.get("event_type", "")
@@ -86,12 +88,22 @@ def _calculate_suspicion_assessment(
             webcam_multi_face += 1
         if event_type == "webcam_unusual_movement":
             webcam_movement_alerts += 1
+        if event_type in {"webcam_feed_unavailable", "webcam_permission_denied", "webcam_play_failed", "webcam_play_retry_failed"}:
+            webcam_no_face += 1
         if event_type == "eye_movement_alert":
             alert_type = str(metadata.get("alert_type") or metadata.get("eye_alert_type") or "").lower()
             if alert_type == "looking_left":
                 eye_left_alerts += 1
             elif alert_type == "looking_right":
                 eye_right_alerts += 1
+            elif alert_type == "looking_up":
+                eye_up_alerts += 1
+            elif alert_type == "looking_down":
+                eye_down_alerts += 1
+            elif alert_type in {"no_face_detected", "no_person"}:
+                webcam_no_face += 1
+            elif alert_type in {"multiple_people", "multiple_faces_detected"}:
+                webcam_multi_face += 1
 
     exam_minutes_taken = max(1.0, _safe_div(time_taken_seconds, 60.0))
 
@@ -101,7 +113,8 @@ def _calculate_suspicion_assessment(
     paste_rate = _safe_div(paste_events, exam_minutes_taken)
     paste_chars_per_min = _safe_div(paste_char_count, exam_minutes_taken)
     fullscreen_rate = _safe_div(fullscreen_exits, exam_minutes_taken)
-    eye_alert_rate = _safe_div(max(eye_left_alerts, eye_right_alerts), exam_minutes_taken)
+    dominant_eye_alerts = max(eye_left_alerts, eye_right_alerts, eye_up_alerts, eye_down_alerts)
+    eye_alert_rate = _safe_div(dominant_eye_alerts, exam_minutes_taken)
     eye_balance_gap = abs(eye_left_alerts - eye_right_alerts)
 
     tab_score = _clamp((0.7 * _risk_from_rate(tab_rate, 0.05, 0.9)) + (0.3 * _risk_from_rate(hidden_ratio, 0.005, 0.08)))
@@ -174,7 +187,7 @@ def _calculate_suspicion_assessment(
         "typing_pattern": _clamp(_safe_div(len(key_deltas), 40)),
         "answer_velocity": _clamp(_safe_div(answer_changes, max(4, (question_count or 4) * 2))),
         "fullscreen": _clamp(0.2 + min(0.8, fullscreen_exits * 0.2)),
-        "eye_movement": _clamp(0.2 + min(0.8, max(eye_left_alerts, eye_right_alerts) * 0.18)),
+        "eye_movement": _clamp(0.2 + min(0.8, dominant_eye_alerts * 0.18)),
         "rapid_completion": 0.9,
         "webcam": _clamp(0.15 + min(0.85, (webcam_no_face + webcam_multi_face + webcam_movement_alerts) * 0.1)),
     }

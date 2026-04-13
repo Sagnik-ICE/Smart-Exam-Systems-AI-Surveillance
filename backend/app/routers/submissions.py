@@ -1,11 +1,11 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import BehaviorEvent, Exam, Submission, User
+from ..models import BehaviorEvent, Exam, ExamRoom, Submission, User
 from ..schemas import (
     StartSubmissionRequest,
     StartSubmissionResponse,
@@ -31,6 +31,13 @@ def start_submission(
     db: Session = Depends(get_db),
     student: User = Depends(require_role("student")),
 ):
+    room = db.query(ExamRoom).filter(ExamRoom.exam_id == payload.exam_id).first()
+    now = datetime.now(timezone.utc)
+    if room and room.scheduled_start_at and now < room.scheduled_start_at:
+        raise HTTPException(status_code=403, detail="This exam has not started yet")
+    if room and room.scheduled_end_at and now > room.scheduled_end_at:
+        raise HTTPException(status_code=403, detail="This exam has already ended")
+
     existing = (
         db.query(Submission)
         .filter(

@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Exam Website Monitor",
+  "version": "1.0.0",
+  "description": "Reports websites opened in other tabs during active exam sessions.",
+  "permissions": ["tabs", "storage", "scripting"],
+  "host_permissions": [
+    "<all_urls>",
+    "http://localhost:5173/*",
+    "http://127.0.0.1:5173/*",
+    "http://localhost:5174/*",
+    "http://127.0.0.1:5174/*",
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:5173/*",
+        "http://127.0.0.1:5173/*",
+        "http://localhost:5174/*",
+        "http://127.0.0.1:5174/*"
+      ],
+      "js": ["content-bridge.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+from sqlalchemy import inspect, text
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -7,6 +9,29 @@ from .routers import analytics, auth, events, exams, management, rooms, submissi
 from .settings import settings
 
 Base.metadata.create_all(bind=engine)
+
+
+def _ensure_exam_room_schedule_columns() -> None:
+    inspector = inspect(engine)
+    if "exam_rooms" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("exam_rooms")}
+    statements = []
+    if "scheduled_start_at" not in existing_columns:
+        statements.append("ALTER TABLE exam_rooms ADD COLUMN scheduled_start_at TIMESTAMP")
+    if "scheduled_end_at" not in existing_columns:
+        statements.append("ALTER TABLE exam_rooms ADD COLUMN scheduled_end_at TIMESTAMP")
+
+    if not statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
+_ensure_exam_room_schedule_columns()
 
 app = FastAPI(title="AI Smart Exam System API", version="0.1.0")
 

@@ -119,3 +119,49 @@ def test_event_payload_guard_rejects_too_many_events(client):
         headers=student_headers,
     )
     assert response.status_code == 422
+
+
+def test_extension_site_event_is_ingested(client):
+    teacher = login(client, "Teacher D", "teacherD@example.com", "teacher")
+    student = login(client, "Student D", "studentD@example.com", "student")
+
+    teacher_headers = {"Authorization": f"Bearer {teacher['access_token']}"}
+    student_headers = {"Authorization": f"Bearer {student['access_token']}"}
+
+    exam_response = client.post(
+        "/exams",
+        json={
+            "title": "Extension Exam",
+            "duration_minutes": 25,
+            "questions": [{"id": "q1", "prompt": "Explain event tracking", "type": "text"}],
+        },
+        headers=teacher_headers,
+    )
+    assert exam_response.status_code == 200
+    exam_id = exam_response.json()["id"]
+
+    start_response = client.post(
+        "/submissions/start",
+        json={"exam_id": exam_id},
+        headers=student_headers,
+    )
+    assert start_response.status_code == 200
+    submission_id = start_response.json()["submission_id"]
+
+    extension_event_response = client.post(
+        "/events/extension-site",
+        json={
+            "submission_id": submission_id,
+            "url": "https://www.example.com/search?q=ai",
+            "title": "Example Search",
+            "trigger": "tab_activated",
+            "timestamp_ms": 3200,
+        },
+        headers=student_headers,
+    )
+    assert extension_event_response.status_code == 200
+
+    dashboard_response = client.get(f"/analytics/exam/{exam_id}", headers=teacher_headers)
+    assert dashboard_response.status_code == 200
+    event_counts = dashboard_response.json()["submissions"][0]["event_counts"]
+    assert event_counts.get("external_site_opened", 0) == 1

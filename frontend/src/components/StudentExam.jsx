@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import api from "../lib/api";
+import api, { getAuthToken } from "../lib/api";
 
 function StudentExam({ user }) {
   const [exam, setExam] = useState(null);
@@ -17,6 +17,9 @@ function StudentExam({ user }) {
   const [cameraNote, setCameraNote] = useState("");
   const [eyeTrackingActive, setEyeTrackingActive] = useState(false);
   const [fullscreenActive, setFullscreenActive] = useState(false);
+  const [extensionConnected, setExtensionConnected] = useState(false);
+  const [extensionCheckingStatus, setExtensionCheckingStatus] = useState(false);
+  const [showExtensionPopup, setShowExtensionPopup] = useState(true);
   const eventBufferRef = useRef([]);
   const flushTimerRef = useRef(null);
   const previousKeyTsRef = useRef(null);
@@ -33,15 +36,18 @@ function StudentExam({ user }) {
   const flushSoonTimerRef = useRef(null);
   const lastEyeTrackingAlertsRef = useRef({});
   const fullscreenGraceWarnedRef = useRef(false);
+  const extensionWarnedRef = useRef(false);
+  const extensionPingTimerRef = useRef(null);
+  const extensionLastSeenRef = useRef(0);
 
   const canSubmit = useMemo(() => status === "running" && submissionId != null, [status, submissionId]);
   const examLocked = useMemo(
-    () => status === "running" && exam && (cameraStatus !== "on" || !fullscreenActive),
-    [status, exam, cameraStatus, fullscreenActive]
+    () => status === "running" && exam && (cameraStatus !== "on" || !fullscreenActive || !extensionConnected),
+    [status, exam, cameraStatus, fullscreenActive, extensionConnected]
   );
   const examReady = useMemo(
-    () => status === "running" && exam && cameraStatus === "on" && fullscreenActive,
-    [status, exam, cameraStatus, fullscreenActive]
+    () => status === "running" && exam && cameraStatus === "on" && fullscreenActive && extensionConnected,
+    [status, exam, cameraStatus, fullscreenActive, extensionConnected]
   );
 
   const formattedTime = useMemo(() => {
@@ -81,6 +87,55 @@ function StudentExam({ user }) {
       timestamp_ms: Date.now() - startedAtMs,
       metadata
     });
+  };
+
+  const notifyExtension = (mode) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const token = getAuthToken();
+    const configuredApiBaseUrl = api?.defaults?.baseURL || `${window.location.protocol}//${window.location.hostname}:8000`;
+    let apiBaseUrl = configuredApiBaseUrl;
+    try {
+      apiBaseUrl = new URL(configuredApiBaseUrl, window.location.origin).toString();
+    } catch {
+      apiBaseUrl = `${window.location.protocol}//${window.location.hostname}:8000`;
+    }
+    apiBaseUrl = apiBaseUrl.replace(/\/$/, "");
+    window.postMessage(
+      {
+        source: "exam-proctor-app",
+        type: mode === "start" ? "EXTENSION_TRACKING_START" : "EXTENSION_TRACKING_STOP",
+        payload: {
+          submissionId,
+          startedAtMs,
+          token,
+          apiBaseUrl,
+          examOrigin: window.location.origin,
+        },
+      },
+      "*"
+    );
+  };
+
+  const requestExtensionHandshake = (showFeedback = false) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.postMessage(
+      {
+        source: "exam-proctor-app",
+        type: "EXTENSION_PING",
+      },
+      "*"
+    );
+    if (showFeedback) {
+      setExtensionCheckingStatus(true);
+      const timeoutId = window.setTimeout(() => {
+        setExtensionCheckingStatus(false);
+      }, 2000);
+      return () => window.clearTimeout(timeoutId);
+    }
   };
 
   const issueWarning = (message, category, metadata = {}, cooldownMs = 3500) => {
@@ -454,6 +509,19 @@ function StudentExam({ user }) {
     hiddenStartRef.current = null;
     blurStartRef.current = null;
     eventBufferRef.current = [];
+    extensionWarnedRef.current = false;
+    if (!extensionConnected) {
+      setShowExtensionPopup(true);
+    }
+  };
+
+  const handleBackToStartFromExam = async () => {
+    const shouldLeave = window.confirm("Leave the current exam and return to the start page?");
+    if (!shouldLeave) {
+      return;
+    }
+    await flushEvents();
+    resetToHome();
   };
 
   useEffect(() => {
@@ -472,6 +540,94 @@ function StudentExam({ user }) {
     }, 1000);
     return () => window.clearInterval(timer);
   }, [status]);
+
+  useEffect(() => {
+    const onMessage = (event) => {
+      if (event.source !== window) {
+        return;
+      }
+      const message = event.data || {};
+      if (message?.source !== "exam-proctor-extension") {
+        return;
+      }
+      if (message?.type === "READY") {
+        extensionLastSeenRef.current = Date.now();
+        setExtensionConnected(true);
+        setExtensionCheckingStatus(false);
+        extensionWarnedRef.current = false;
+        setWarnings((current) => current.filter((item) => !String(item.id || "").endsWith("-extension_not_connected")));
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  useEffect(() => {
+    requestExtensionHandshake(false);
+    const timer = window.setInterval(() => {
+      if (!extensionConnected) {
+        requestExtensionHandshake(false);
+      }
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [extensionConnected]);
+
+  useEffect(() => {
+    if (showExtensionPopup && !extensionConnected) {
+      const aggressiveTimer = window.setInterval(() => {
+        requestExtensionHandshake(false);
+      }, 800);
+      return () => window.clearInterval(aggressiveTimer);
+    }
+    return undefined;
+  }, [showExtensionPopup, extensionConnected]);
+
+  useEffect(() => {
+    if (extensionConnected) {
+      setShowExtensionPopup(false);
+      extensionWarnedRef.current = false;
+      setWarnings((current) => current.filter((item) => !String(item.id || "").endsWith("-extension_not_connected")));
+    }
+  }, [extensionConnected]);
+
+  useEffect(() => {
+    if (status !== "running" || !submissionId || !startedAtMs) {
+      notifyExtension("stop");
+      if (extensionPingTimerRef.current) {
+        window.clearInterval(extensionPingTimerRef.current);
+        extensionPingTimerRef.current = null;
+      }
+      return undefined;
+    }
+
+    extensionLastSeenRef.current = Date.now();
+    notifyExtension("start");
+    extensionPingTimerRef.current = window.setInterval(() => {
+      const staleMs = Date.now() - (extensionLastSeenRef.current || 0);
+      if (staleMs > 12000) {
+        setExtensionConnected(false);
+      }
+      notifyExtension("start");
+    }, 5000);
+
+    if (!extensionConnected && !extensionWarnedRef.current) {
+      extensionWarnedRef.current = true;
+      issueWarning(
+        "Website-name extension is not connected. Questions stay locked until extension is active.",
+        "extension_not_connected",
+        {},
+        15000
+      );
+    }
+
+    return () => {
+      notifyExtension("stop");
+      if (extensionPingTimerRef.current) {
+        window.clearInterval(extensionPingTimerRef.current);
+        extensionPingTimerRef.current = null;
+      }
+    };
+  }, [status, submissionId, startedAtMs, extensionConnected]);
 
   const requestFullscreenMode = async () => {
     if (!document.fullscreenElement && document.documentElement?.requestFullscreen) {
@@ -618,6 +774,58 @@ function StudentExam({ user }) {
         Monitoring is enabled: tab activity, typing rhythm, and paste events. Welcome {user.name}.
       </p>
 
+      {showExtensionPopup && !extensionConnected ? (
+        <div className="answer-detail-overlay">
+          <div className="answer-detail-modal extension-install-modal">
+            <div className="answer-detail-header">
+              <div>
+                <h3>Install Required Extension</h3>
+                <p className="muted">
+                  To start this exam, install and enable the "Exam Website Monitor" extension in your browser.
+                </p>
+              </div>
+            </div>
+            <div className="extension-install-steps">
+              <h4>Chrome</h4>
+              <p className="muted">1. Open chrome://extensions</p>
+              <p className="muted">2. Enable Developer mode</p>
+              <p className="muted">3. Click Load unpacked</p>
+              <p className="muted">4. Select: browser-extension/website-monitor-extension</p>
+              <h4>Edge</h4>
+              <p className="muted">1. Open edge://extensions</p>
+              <p className="muted">2. Enable Developer mode</p>
+              <p className="muted">3. Click Load unpacked</p>
+              <p className="muted">4. Select: browser-extension/website-monitor-extension</p>
+            </div>
+            <div className="inline-row extension-install-actions">
+              <button
+                type="button"
+                disabled={extensionCheckingStatus}
+                onClick={() => {
+                  setExtensionConnected(false);
+                  requestExtensionHandshake(true);
+                }}
+              >
+                {extensionCheckingStatus ? "Checking..." : "I Have Enabled Extension"}
+              </button>
+              <button
+                type="button"
+                className="secondary-btn"
+                disabled={extensionCheckingStatus}
+                onClick={() => {
+                  requestExtensionHandshake(true);
+                }}
+              >
+                {extensionCheckingStatus ? "Checking..." : "Recheck Connection"}
+              </button>
+            </div>
+            <p className="muted" style={{ fontWeight: extensionCheckingStatus || extensionConnected ? "600" : "400" }}>
+              Current Status: {extensionCheckingStatus ? "Checking connection..." : extensionConnected ? "Connected ✓" : "Not Connected"}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       {status === "idle" ? (
         <div className="inline-row">
           <label>
@@ -628,7 +836,18 @@ function StudentExam({ user }) {
               placeholder="TR12-ABC123"
             />
           </label>
-          <button onClick={startExam}>Start Exam</button>
+          <button onClick={startExam} disabled={!extensionConnected}>Start Exam</button>
+          <span
+            className={`exam-connection-pill ${extensionConnected ? "exam-connection-pill-connected" : "exam-connection-pill-disconnected"}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="exam-connection-dot" aria-hidden="true" />
+            Extension {extensionConnected ? "Connected" : "Not Connected"}
+          </span>
+          {!extensionConnected ? (
+            <p className="muted">Enable the required extension first. Questions remain locked until it is connected.</p>
+          ) : null}
         </div>
       ) : null}
 
@@ -640,8 +859,30 @@ function StudentExam({ user }) {
 
       {status === "running" && exam ? (
         <>
-          <div className="timer">Time Left: {formattedTime}</div>
-          <div className="inline-row">
+          <div className="exam-running-header">
+            <div className="timer">Time Left: {formattedTime}</div>
+            <div className="exam-utility-bar">
+              <button
+                type="button"
+                className="exam-utility-btn"
+                onClick={() => {
+                  setExtensionConnected(false);
+                  requestExtensionHandshake(true);
+                }}
+              >
+                Verify Extension
+              </button>
+              <button
+                type="button"
+                className="exam-utility-btn exam-utility-btn-soft"
+                onClick={handleBackToStartFromExam}
+                title="Return to exam start page"
+              >
+                Back to Start
+              </button>
+            </div>
+          </div>
+          <div className="inline-row exam-control-row">
             <button
               type="button"
               onClick={() => requestFullscreenMode()}
@@ -667,15 +908,24 @@ function StudentExam({ user }) {
                 ? "Disable Webcam Monitoring"
                 : "Enable Webcam Monitoring"}
             </button>
-            <p className="muted">
-              Webcam status: {cameraStatus === "on" ? "active" : cameraStatus === "starting" ? "starting" : cameraStatus === "denied" ? "denied" : "off"}
-            </p>
-            {cameraNote ? <p className="muted">{cameraNote}</p> : null}
+            <div className="exam-status-inline">
+              <p className="muted">
+                Webcam: {cameraStatus === "on" ? "active" : cameraStatus === "starting" ? "starting" : cameraStatus === "denied" ? "denied" : "off"}
+              </p>
+              <p className="muted">Extension: {extensionConnected ? "connected" : "not connected"}</p>
+              {cameraNote ? <p className="muted">{cameraNote}</p> : null}
+            </div>
           </div>
           {examLocked ? (
             <div className="warning-feed">
               <div className="warning-item">
-                <strong>Exam Locked:</strong> enable webcam and enter fullscreen before questions appear.
+                <strong>Exam Locked:</strong> complete all required checks before questions appear.
+                <div className="muted">Webcam: {cameraStatus === "on" ? "OK" : "Required"}</div>
+                <div className="muted">Fullscreen: {fullscreenActive ? "OK" : "Required"}</div>
+                <div className="muted">Website extension: {extensionConnected ? "OK" : "Required"}</div>
+                {!extensionConnected ? (
+                  <div className="muted">Enable the loaded "Exam Website Monitor" extension, then click Verify Extension.</div>
+                ) : null}
               </div>
             </div>
           ) : null}
